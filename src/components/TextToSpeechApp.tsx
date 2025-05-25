@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Play, Download, Loader2, Volume2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 const VOICES = [
   { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },
@@ -46,15 +47,9 @@ export default function TextToSpeechApp() {
   const [clarity, setClarity] = useState([0.75]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState('');
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const generateSpeech = async () => {
-    if (!apiKey.trim()) {
-      toast.error('Please enter your ElevenLabs API key');
-      return;
-    }
-
     if (!text.trim()) {
       toast.error('Please enter some text to convert');
       return;
@@ -63,15 +58,12 @@ export default function TextToSpeechApp() {
     setIsGenerating(true);
     
     try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey
-        },
-        body: JSON.stringify({
+      console.log('Calling text-to-speech function...');
+      
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: {
           text: text,
+          voice_id: selectedVoice,
           model_id: selectedModel,
           voice_settings: {
             stability: stability[0],
@@ -79,20 +71,34 @@ export default function TextToSpeechApp() {
             style: 0.0,
             use_speaker_boost: true
           }
-        })
+        }
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to generate speech: ${response.statusText}`);
+      if (error) {
+        console.error('Supabase function error:', error);
+        throw new Error(error.message || 'Failed to generate speech');
       }
 
-      const audioBlob = await response.blob();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to generate speech');
+      }
+
+      // Convert base64 audio back to blob
+      const audioBytes = atob(data.audioData);
+      const audioArray = new Uint8Array(audioBytes.length);
+      for (let i = 0; i < audioBytes.length; i++) {
+        audioArray[i] = audioBytes.charCodeAt(i);
+      }
+      
+      const audioBlob = new Blob([audioArray], { type: 'audio/mpeg' });
       const url = URL.createObjectURL(audioBlob);
       setAudioUrl(url);
+      
+      console.log('Audio generated successfully!');
       toast.success('Audio generated successfully!');
     } catch (error) {
       console.error('Error generating speech:', error);
-      toast.error('Failed to generate speech. Please check your API key and try again.');
+      toast.error(`Failed to generate speech: ${error.message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -153,20 +159,6 @@ export default function TextToSpeechApp() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* API Key Input */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    ElevenLabs API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Enter your API key"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
                 {/* Voice Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Voice</label>
@@ -257,7 +249,7 @@ export default function TextToSpeechApp() {
             <div className="space-y-3">
               <Button
                 onClick={generateSpeech}
-                disabled={isGenerating || !apiKey.trim() || !text.trim()}
+                disabled={isGenerating || !text.trim()}
                 className="w-full bg-black hover:bg-gray-800 text-white py-3"
                 size="lg"
               >
