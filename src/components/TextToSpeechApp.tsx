@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
-import { Play, Download, Loader2, Volume2 } from 'lucide-react';
+import { Play, Download, Loader2, Volume2, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -60,6 +60,9 @@ export default function TextToSpeechApp() {
     try {
       console.log('Calling text-to-speech function...');
       
+      // Get current session for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: {
           text: text,
@@ -71,7 +74,10 @@ export default function TextToSpeechApp() {
             style: 0.0,
             use_speaker_boost: true
           }
-        }
+        },
+        headers: session?.access_token ? {
+          Authorization: `Bearer ${session.access_token}`
+        } : {}
       });
 
       if (error) {
@@ -95,7 +101,7 @@ export default function TextToSpeechApp() {
       setAudioUrl(url);
       
       console.log('Audio generated successfully!');
-      toast.success('Audio generated successfully!');
+      toast.success('Audio generated and saved to history!');
     } catch (error) {
       console.error('Error generating speech:', error);
       toast.error(`Failed to generate speech: ${error.message}`);
@@ -133,6 +139,18 @@ export default function TextToSpeechApp() {
           <h2 className="text-3xl font-bold text-gray-900 mb-4">
             Text to Speech with high quality, human-like AI voice generator
           </h2>
+          
+          {/* Navigation */}
+          <div className="mb-6">
+            <Button
+              onClick={() => window.location.href = '/history'}
+              variant="outline"
+              className="gap-2"
+            >
+              <History className="h-4 w-4" />
+              View History
+            </Button>
+          </div>
         </header>
 
         <div className="grid lg:grid-cols-3 gap-8">

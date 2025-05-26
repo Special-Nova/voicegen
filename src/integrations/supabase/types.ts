@@ -9,7 +9,42 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      audio_history: {
+        Row: {
+          created_at: string
+          file_path: string
+          file_size: number | null
+          id: string
+          model_id: string
+          text_content: string
+          user_id: string | null
+          voice_id: string
+          voice_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          model_id: string
+          text_content: string
+          user_id?: string | null
+          voice_id: string
+          voice_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          model_id?: string
+          text_content?: string
+          user_id?: string | null
+          voice_id?: string
+          voice_name?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
