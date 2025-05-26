@@ -5,6 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Play, Download, Loader2, Volume2, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,11 +19,16 @@ const VOICES = [
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah' },
   { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam' },
-  { id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda' }
+  { id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda' },
+  // Hindi voices
+  { id: 'pMsXgVXv3BLzUgSXRplE', name: 'Premiumhindi' },
+  { id: 'JhdmE8AMBaGSnvtQQQgp', name: 'Hindivoice' },
+  { id: 'custom', name: 'Custom Voice ID' }
 ];
 
 const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
+  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
   { code: 'es', name: 'Spanish', flag: '🇪🇸' },
   { code: 'fr', name: 'French', flag: '🇫🇷' },
   { code: 'de', name: 'German', flag: '🇩🇪' },
@@ -40,6 +47,7 @@ const MODELS = [
 export default function TextToSpeechApp() {
   const [text, setText] = useState('In the ancient land of Eldoria, where the skies were painted with shades of mystic hues and the forests whispered secrets of old, there existed a dragon named Zephyros. Unlike the fearsome tales of dragons that plagued human hearts with terror, Zephyros was a creature of wonder and wisdom, revered by all who knew of his existence.');
   const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
+  const [customVoiceId, setCustomVoiceId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [selectedModel, setSelectedModel] = useState('eleven_multilingual_v2');
   const [speed, setSpeed] = useState([1.0]);
@@ -55,6 +63,14 @@ export default function TextToSpeechApp() {
       return;
     }
 
+    // Use custom voice ID if selected, otherwise use the selected voice
+    const voiceToUse = selectedVoice === 'custom' ? customVoiceId : selectedVoice;
+    
+    if (selectedVoice === 'custom' && !customVoiceId.trim()) {
+      toast.error('Please enter a custom voice ID');
+      return;
+    }
+
     setIsGenerating(true);
     
     try {
@@ -66,7 +82,7 @@ export default function TextToSpeechApp() {
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: {
           text: text,
-          voice_id: selectedVoice,
+          voice_id: voiceToUse,
           model_id: selectedModel,
           voice_settings: {
             stability: stability[0],
@@ -193,6 +209,25 @@ export default function TextToSpeechApp() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Custom Voice ID Input */}
+                {selectedVoice === 'custom' && (
+                  <div>
+                    <Label htmlFor="custom-voice-id" className="block text-sm font-medium text-gray-700 mb-2">
+                      Custom Voice ID
+                    </Label>
+                    <Input
+                      id="custom-voice-id"
+                      value={customVoiceId}
+                      onChange={(e) => setCustomVoiceId(e.target.value)}
+                      placeholder="Enter your custom voice ID"
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter your ElevenLabs voice ID (e.g., from voice cloning)
+                    </p>
+                  </div>
+                )}
 
                 {/* Language Selection */}
                 <div>
