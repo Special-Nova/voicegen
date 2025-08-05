@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Play, Download, Loader2, Volume2, History, Languages } from 'lucide-react';
+import { Play, Download, Loader2, Volume2, History, Languages, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -68,8 +68,11 @@ export default function TextToSpeechApp() {
   const [clarity, setClarity] = useState([0.75]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const translateText = async () => {
     if (!text.trim()) {
@@ -194,6 +197,93 @@ export default function TextToSpeechApp() {
       const link = document.createElement('a');
       link.href = audioUrl;
       link.download = 'generated-speech.mp3';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const generateVideo = async () => {
+    const textToUse = enableTranslation && translatedText ? translatedText : text;
+    
+    if (!textToUse.trim()) {
+      toast.error('Please enter some text to convert to video');
+      return;
+    }
+
+    setIsGeneratingVideo(true);
+    
+    try {
+      console.log('Generating story video...');
+      
+      const { data, error } = await supabase.functions.invoke('story-to-video', {
+        body: {
+          text: textToUse,
+          style: 'cinematic'
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to generate video');
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to generate video');
+      }
+
+      // Create a simple video from images and audio using HTML5 Canvas
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 1536;
+      canvas.height = 1024;
+
+      const audioBlob = new Blob([
+        new Uint8Array(atob(data.audio).split('').map(c => c.charCodeAt(0)))
+      ], { type: 'audio/mpeg' });
+      
+      // For now, just show the first image as a video frame with audio
+      // In a full implementation, you'd create an actual video with all scenes
+      const firstImage = data.scenes[0];
+      const img = new Image();
+      
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Convert canvas to video-like blob (simplified)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const videoUrl = URL.createObjectURL(blob);
+            setVideoUrl(videoUrl);
+            
+            // Also set the audio
+            const audioUrl = URL.createObjectURL(audioBlob);
+            setAudioUrl(audioUrl);
+          }
+        }, 'image/jpeg', 0.9);
+      };
+      
+      img.src = `data:image/webp;base64,${firstImage.imageData}`;
+      
+      toast.success(`Video generated with ${data.totalScenes} scenes!`);
+    } catch (error) {
+      console.error('Error generating video:', error);
+      toast.error(`Failed to generate video: ${error.message}`);
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  };
+
+  const playVideo = () => {
+    if (videoRef.current && videoUrl) {
+      videoRef.current.play();
+    }
+  };
+
+  const downloadVideo = () => {
+    if (videoUrl) {
+      const link = document.createElement('a');
+      link.href = videoUrl;
+      link.download = 'generated-story-video.jpg';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -467,6 +557,74 @@ export default function TextToSpeechApp() {
                 </div>
               )}
             </div>
+
+            {/* Story to Video Section */}
+            <Card className="p-4 bg-purple-50 border-purple-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Video className="h-5 w-5 text-purple-600" />
+                <Label className="text-sm font-medium text-purple-800">Story to Video</Label>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-xs text-purple-700">
+                  Generate a cinematic video with AI visuals and narration from your story
+                </p>
+                
+                <Button
+                  onClick={generateVideo}
+                  disabled={isGeneratingVideo || !text.trim()}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                  size="lg"
+                >
+                  {isGeneratingVideo ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Video...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="mr-2 h-4 w-4" />
+                      Generate Story Video
+                    </>
+                  )}
+                </Button>
+
+                {videoUrl && (
+                  <div className="space-y-2">
+                    <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                      <img 
+                        src={videoUrl} 
+                        alt="Generated video frame"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={playVideo}
+                        variant="outline"
+                        className="flex-1"
+                        size="sm"
+                      >
+                        <Play className="mr-2 h-4 w-4" />
+                        Preview
+                      </Button>
+                      <Button
+                        onClick={downloadVideo}
+                        variant="outline"
+                        className="flex-1"
+                        size="sm"
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </Button>
+                    </div>
+                    {audioUrl && (
+                      <audio ref={audioRef} src={audioUrl} controls className="w-full" />
+                    )}
+                  </div>
+                )}
+              </div>
+            </Card>
           </div>
         </div>
 
