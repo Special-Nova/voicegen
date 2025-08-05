@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Play, Download, Loader2, Volume2, History } from 'lucide-react';
+import { Play, Download, Loader2, Volume2, History, Languages } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -35,7 +35,17 @@ const LANGUAGES = [
   { code: 'it', name: 'Italian', flag: '🇮🇹' },
   { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
   { code: 'ja', name: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', flag: '🇰🇷' }
+  { code: 'ko', name: 'Korean', flag: '🇰🇷' },
+  { code: 'zh', name: 'Chinese', flag: '🇨🇳' },
+  { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
+  { code: 'pl', name: 'Polish', flag: '🇵🇱' },
+  { code: 'ru', name: 'Russian', flag: '🇷🇺' },
+  { code: 'tr', name: 'Turkish', flag: '🇹🇷' },
+  { code: 'nl', name: 'Dutch', flag: '🇳🇱' },
+  { code: 'sv', name: 'Swedish', flag: '🇸🇪' },
+  { code: 'da', name: 'Danish', flag: '🇩🇰' },
+  { code: 'no', name: 'Norwegian', flag: '🇳🇴' },
+  { code: 'fi', name: 'Finnish', flag: '🇫🇮' }
 ];
 
 const MODELS = [
@@ -49,16 +59,63 @@ export default function TextToSpeechApp() {
   const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
   const [customVoiceId, setCustomVoiceId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [translateToLanguage, setTranslateToLanguage] = useState('');
+  const [enableTranslation, setEnableTranslation] = useState(false);
+  const [translatedText, setTranslatedText] = useState('');
   const [selectedModel, setSelectedModel] = useState('eleven_multilingual_v2');
   const [speed, setSpeed] = useState([1.0]);
   const [stability, setStability] = useState([0.5]);
   const [clarity, setClarity] = useState([0.75]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const generateSpeech = async () => {
+  const translateText = async () => {
     if (!text.trim()) {
+      toast.error('Please enter some text to translate');
+      return;
+    }
+
+    if (!translateToLanguage) {
+      toast.error('Please select a target language for translation');
+      return;
+    }
+
+    setIsTranslating(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: {
+          text: text,
+          targetLanguage: translateToLanguage,
+          sourceLanguage: 'auto'
+        }
+      });
+
+      if (error) {
+        console.error('Translation error:', error);
+        throw new Error(`Failed to translate text: ${error.message}`);
+      }
+
+      if (!data || !data.translatedText) {
+        throw new Error('No translation data received');
+      }
+
+      setTranslatedText(data.translatedText);
+      toast.success('Text translated successfully!');
+    } catch (error) {
+      console.error('Error translating text:', error);
+      toast.error(`Failed to translate text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const generateSpeech = async () => {
+    const textToUse = enableTranslation && translatedText ? translatedText : text;
+    
+    if (!textToUse.trim()) {
       toast.error('Please enter some text to convert');
       return;
     }
@@ -81,7 +138,7 @@ export default function TextToSpeechApp() {
       
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: {
-          text: text,
+          text: textToUse,
           voice_id: voiceToUse,
           model_id: selectedModel,
           voice_settings: {
@@ -229,9 +286,80 @@ export default function TextToSpeechApp() {
                   </div>
                 )}
 
+                {/* Translation Section */}
+                <Card className="p-4 bg-blue-50 border-blue-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Languages className="h-5 w-5 text-blue-600" />
+                    <Label className="text-sm font-medium text-blue-800">Translation</Label>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="enable-translation"
+                        checked={enableTranslation}
+                        onChange={(e) => setEnableTranslation(e.target.checked)}
+                        className="rounded"
+                      />
+                      <Label htmlFor="enable-translation" className="text-sm">
+                        Enable translation before speech generation
+                      </Label>
+                    </div>
+
+                    {enableTranslation && (
+                      <>
+                        <div>
+                          <Label className="block text-sm font-medium mb-1">
+                            Translate to:
+                          </Label>
+                          <Select value={translateToLanguage} onValueChange={setTranslateToLanguage}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select target language" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {LANGUAGES.map((lang) => (
+                                <SelectItem key={lang.code} value={lang.code}>
+                                  {lang.flag} {lang.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <Button
+                          onClick={translateText}
+                          disabled={isTranslating || !translateToLanguage}
+                          className="w-full"
+                          variant="outline"
+                        >
+                          {isTranslating ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Translating...
+                            </>
+                          ) : (
+                            <>
+                              <Languages className="mr-2 h-4 w-4" />
+                              Translate Text
+                            </>
+                          )}
+                        </Button>
+
+                        {translatedText && (
+                          <div className="p-3 bg-white rounded border">
+                            <Label className="text-xs text-gray-600 mb-1 block">Translated text:</Label>
+                            <p className="text-sm">{translatedText}</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </Card>
+
                 {/* Language Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Voice Language Model</label>
                   <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select language" />
