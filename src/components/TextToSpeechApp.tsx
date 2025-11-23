@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Play, Download, Loader2, Volume2, History, Languages, Video } from 'lucide-react';
+import { Play, Pause, Download, Loader2, Volume2, History, Languages, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 const VOICES = [{
@@ -149,6 +149,7 @@ export default function TextToSpeechApp() {
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const translateText = async () => {
@@ -261,6 +262,14 @@ export default function TextToSpeechApp() {
   const playAudio = () => {
     if (audioRef.current && audioUrl) {
       audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const pauseAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
     }
   };
   const downloadAudio = () => {
@@ -527,9 +536,23 @@ export default function TextToSpeechApp() {
               </Button>
 
               {audioUrl && <div className="flex gap-2">
-                  <Button onClick={playAudio} variant="outline" className="flex-1" size="lg">
-                    <Play className="mr-2 h-4 w-4" />
-                    Play
+                  <Button 
+                    onClick={isPlaying ? pauseAudio : playAudio} 
+                    variant="outline" 
+                    className="flex-1" 
+                    size="lg"
+                  >
+                    {isPlaying ? (
+                      <>
+                        <Pause className="mr-2 h-4 w-4" />
+                        Pause
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-2 h-4 w-4" />
+                        Play
+                      </>
+                    )}
                   </Button>
                   <Button onClick={downloadAudio} variant="outline" className="flex-1" size="lg">
                     <Download className="mr-2 h-4 w-4" />
@@ -582,7 +605,15 @@ export default function TextToSpeechApp() {
         </div>
 
         {/* Hidden Audio Element */}
-        {audioUrl && <audio ref={audioRef} src={audioUrl} controls className="hidden" />}
+        {audioUrl && <audio 
+          ref={audioRef} 
+          src={audioUrl} 
+          controls 
+          className="hidden"
+          onEnded={() => setIsPlaying(false)}
+          onPause={() => setIsPlaying(false)}
+          onPlay={() => setIsPlaying(true)}
+        />}
 
         {/* Footer */}
         <footer className="text-center mt-12 py-8 border-t border-gray-200">
