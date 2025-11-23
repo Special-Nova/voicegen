@@ -7,6 +7,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Split text into chunks at sentence boundaries
+function splitTextIntoChunks(text: string, maxChunkSize: number = 10000): string[] {
+  if (text.length <= maxChunkSize) {
+    return [text]
+  }
+
+  const chunks: string[] = []
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
+  
+  let currentChunk = ''
+  
+  for (const sentence of sentences) {
+    // If a single sentence is longer than maxChunkSize, split it by words
+    if (sentence.length > maxChunkSize) {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim())
+        currentChunk = ''
+      }
+      
+      const words = sentence.split(' ')
+      for (const word of words) {
+        if ((currentChunk + ' ' + word).length > maxChunkSize) {
+          if (currentChunk) {
+            chunks.push(currentChunk.trim())
+          }
+          currentChunk = word
+        } else {
+          currentChunk = currentChunk ? currentChunk + ' ' + word : word
+        }
+      }
+    } else if ((currentChunk + sentence).length > maxChunkSize) {
+      chunks.push(currentChunk.trim())
+      currentChunk = sentence
+    } else {
+      currentChunk += sentence
+    }
+  }
+  
+  if (currentChunk) {
+    chunks.push(currentChunk.trim())
+  }
+  
+  return chunks
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -18,11 +63,6 @@ serve(async (req) => {
 
     if (!text) {
       throw new Error('Text is required')
-    }
-
-    // Check text length - ElevenLabs has a 10,000 character limit for TTS
-    if (text.length > 10000) {
-      throw new Error(`Text is too long (${text.length} characters). Maximum allowed is 10,000 characters. Please use shorter text or split it into multiple requests.`)
     }
 
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY')
@@ -46,61 +86,81 @@ serve(async (req) => {
       userId = user?.id || null
     }
 
-    console.log('Generating speech for text:', text.substring(0, 50) + '...')
-    console.log('Using voice ID:', voice_id)
-    console.log('Using model:', model_id)
+    // Split text into chunks if longer than 10,000 characters
+    const textChunks = splitTextIntoChunks(text, 10000)
+    console.log(`Processing ${textChunks.length} chunk(s) of text`)
 
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': elevenLabsApiKey
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: model_id,
-        voice_settings: voice_settings
-      })
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('ElevenLabs API error:', response.status, errorText)
-      throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`)
-    }
-
-    // Get the audio data as array buffer
-    const audioBuffer = await response.arrayBuffer()
-    
-    // Convert array buffer to Uint8Array for safer processing
-    const uint8Array = new Uint8Array(audioBuffer)
-    
-    // Convert to base64 using a more efficient method
     const chunks = []
-    const chunkSize = 8192
     
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.slice(i, i + chunkSize)
-      chunks.push(String.fromCharCode.apply(null, Array.from(chunk)))
-    }
-    
-    const base64Audio = btoa(chunks.join(''))
+    // Process each chunk
+    for (let i = 0; i < textChunks.length; i++) {
+      const chunkText = textChunks[i]
+      console.log(`Generating speech for chunk ${i + 1}/${textChunks.length} (${chunkText.length} chars)`)
+      console.log('Using voice ID:', voice_id)
+      console.log('Using model:', model_id)
 
-    // Save audio file to Supabase storage
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.mp3`
-    const filePath = userId ? `${userId}/${fileName}` : `anonymous/${fileName}`
-    
-    const { error: uploadError } = await supabase.storage
-      .from('audio-files')
-      .upload(filePath, uint8Array, {
-        contentType: 'audio/mpeg',
-        cacheControl: '3600'
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': elevenLabsApiKey
+        },
+        body: JSON.stringify({
+          text: chunkText,
+          model_id: model_id,
+          voice_settings: voice_settings
+        })
       })
 
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError)
-      throw new Error(`Failed to save audio file: ${uploadError.message}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('ElevenLabs API error:', response.status, errorText)
+        throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`)
+      }
+
+      // Get the audio data as array buffer
+      const audioBuffer = await response.arrayBuffer()
+      
+      // Convert array buffer to Uint8Array for safer processing
+      const uint8Array = new Uint8Array(audioBuffer)
+      
+      // Convert to base64 using a more efficient method
+      const base64Chunks = []
+      const chunkSize = 8192
+      
+      for (let j = 0; j < uint8Array.length; j += chunkSize) {
+        const chunk = uint8Array.slice(j, j + chunkSize)
+        base64Chunks.push(String.fromCharCode.apply(null, Array.from(chunk)))
+      }
+      
+      const base64Audio = btoa(base64Chunks.join(''))
+
+      // Save audio file to Supabase storage
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-chunk-${i + 1}.mp3`
+      const filePath = userId ? `${userId}/${fileName}` : `anonymous/${fileName}`
+      
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(filePath, uint8Array, {
+          contentType: 'audio/mpeg',
+          cacheControl: '3600'
+        })
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError)
+        throw new Error(`Failed to save audio file: ${uploadError.message}`)
+      }
+
+      console.log(`Chunk ${i + 1} saved to storage:`, filePath)
+
+      chunks.push({
+        index: i,
+        audioData: base64Audio,
+        filePath: filePath,
+        size: audioBuffer.byteLength,
+        textLength: chunkText.length
+      })
     }
 
     // Get voice name from predefined voices
@@ -116,7 +176,8 @@ serve(async (req) => {
     ];
     const voiceName = voices.find(v => v.id === voice_id)?.name || 'Unknown'
 
-    // Save history entry to database
+    // Save history entry to database for the complete text
+    const totalSize = chunks.reduce((sum, chunk) => sum + chunk.size, 0)
     const { error: dbError } = await supabase
       .from('audio_history')
       .insert({
@@ -125,8 +186,8 @@ serve(async (req) => {
         voice_id: voice_id,
         voice_name: voiceName,
         model_id: model_id,
-        file_path: filePath,
-        file_size: audioBuffer.byteLength
+        file_path: chunks[0].filePath, // Store first chunk's path as reference
+        file_size: totalSize
       })
 
     if (dbError) {
@@ -134,14 +195,13 @@ serve(async (req) => {
       // Don't throw error here, just log it - we still want to return the audio
     }
 
-    console.log('Successfully generated audio, size:', audioBuffer.byteLength, 'bytes')
-    console.log('Saved to storage:', filePath)
+    console.log(`Successfully generated ${chunks.length} audio chunk(s), total size:`, totalSize, 'bytes')
 
     return new Response(JSON.stringify({ 
       success: true,
-      audioData: base64Audio,
-      contentType: 'audio/mpeg',
-      filePath: filePath
+      chunks: chunks,
+      totalChunks: chunks.length,
+      contentType: 'audio/mpeg'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
