@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -150,8 +150,17 @@ export default function TextToSpeechApp() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [audioChunks, setAudioChunks] = useState<string[]>([]);
+  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Auto-play next chunk when audioUrl changes (except for the first load)
+  useEffect(() => {
+    if (audioRef.current && audioUrl && isPlaying && currentChunkIndex > 0) {
+      audioRef.current.play();
+    }
+  }, [audioUrl, currentChunkIndex]);
   const translateText = async () => {
     if (!text.trim()) {
       toast.error('Please enter some text to translate');
@@ -239,19 +248,44 @@ export default function TextToSpeechApp() {
         throw new Error(data.error || 'Failed to generate speech');
       }
 
-      // Convert base64 audio back to blob
-      const audioBytes = atob(data.audioData);
-      const audioArray = new Uint8Array(audioBytes.length);
-      for (let i = 0; i < audioBytes.length; i++) {
-        audioArray[i] = audioBytes.charCodeAt(i);
+      // Handle chunked response
+      if (data.chunks && data.chunks.length > 0) {
+        // Convert all chunks to blob URLs
+        const chunkUrls = data.chunks.map((chunk: any) => {
+          const audioBytes = atob(chunk.audioData);
+          const audioArray = new Uint8Array(audioBytes.length);
+          for (let i = 0; i < audioBytes.length; i++) {
+            audioArray[i] = audioBytes.charCodeAt(i);
+          }
+          const audioBlob = new Blob([audioArray], {
+            type: 'audio/mpeg'
+          });
+          return URL.createObjectURL(audioBlob);
+        });
+        
+        setAudioChunks(chunkUrls);
+        setCurrentChunkIndex(0);
+        setAudioUrl(chunkUrls[0]);
+        
+        console.log(`Audio generated successfully in ${data.totalChunks} chunk(s)!`);
+        toast.success(`Audio generated in ${data.totalChunks} part(s) and saved to history!`);
+      } else {
+        // Fallback for single audio response (backward compatibility)
+        const audioBytes = atob(data.audioData);
+        const audioArray = new Uint8Array(audioBytes.length);
+        for (let i = 0; i < audioBytes.length; i++) {
+          audioArray[i] = audioBytes.charCodeAt(i);
+        }
+        const audioBlob = new Blob([audioArray], {
+          type: 'audio/mpeg'
+        });
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+        setAudioChunks([url]);
+        setCurrentChunkIndex(0);
+        console.log('Audio generated successfully!');
+        toast.success('Audio generated and saved to history!');
       }
-      const audioBlob = new Blob([audioArray], {
-        type: 'audio/mpeg'
-      });
-      const url = URL.createObjectURL(audioBlob);
-      setAudioUrl(url);
-      console.log('Audio generated successfully!');
-      toast.success('Audio generated and saved to history!');
     } catch (error) {
       console.error('Error generating speech:', error);
       toast.error(`Failed to generate speech: ${error.message}`);
@@ -269,6 +303,18 @@ export default function TextToSpeechApp() {
   const pauseAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const handleChunkEnded = () => {
+    // Play next chunk if available
+    if (currentChunkIndex < audioChunks.length - 1) {
+      const nextIndex = currentChunkIndex + 1;
+      setCurrentChunkIndex(nextIndex);
+      setAudioUrl(audioChunks[nextIndex]);
+      // Audio will auto-play due to the useEffect watching audioUrl
+    } else {
       setIsPlaying(false);
     }
   };
@@ -605,15 +651,26 @@ export default function TextToSpeechApp() {
         </div>
 
         {/* Hidden Audio Element */}
-        {audioUrl && <audio 
-          ref={audioRef} 
-          src={audioUrl} 
-          controls 
-          className="hidden"
-          onEnded={() => setIsPlaying(false)}
-          onPause={() => setIsPlaying(false)}
-          onPlay={() => setIsPlaying(true)}
-        />}
+        {audioUrl && (
+          <>
+            <audio 
+              ref={audioRef} 
+              src={audioUrl} 
+              controls 
+              className="hidden"
+              onEnded={handleChunkEnded}
+              onPause={() => setIsPlaying(false)}
+              onPlay={() => setIsPlaying(true)}
+            />
+            {audioChunks.length > 1 && (
+              <div className="fixed bottom-4 right-4 bg-white shadow-lg rounded-lg p-3 border">
+                <div className="text-sm text-gray-700">
+                  Playing part {currentChunkIndex + 1} of {audioChunks.length}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Footer */}
         <footer className="text-center mt-12 py-8 border-t border-gray-200">
