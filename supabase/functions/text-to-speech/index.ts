@@ -20,6 +20,11 @@ serve(async (req) => {
       throw new Error('Text is required')
     }
 
+    // Check text length - ElevenLabs has a 10,000 character limit for TTS
+    if (text.length > 10000) {
+      throw new Error(`Text is too long (${text.length} characters). Maximum allowed is 10,000 characters. Please use shorter text or split it into multiple requests.`)
+    }
+
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY')
     if (!elevenLabsApiKey) {
       throw new Error('ElevenLabs API key not configured')
