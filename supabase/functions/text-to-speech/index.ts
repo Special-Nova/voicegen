@@ -116,6 +116,12 @@ serve(async (req) => {
       if (!response.ok) {
         const errorText = await response.text()
         console.error('ElevenLabs API error:', response.status, errorText)
+        
+        // Check for quota exceeded error
+        if (errorText.includes('quota_exceeded')) {
+          throw new Error('ElevenLabs quota exceeded. Please upgrade your plan, use shorter text, or try a lower-cost model like Turbo v2.')
+        }
+        
         throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`)
       }
 
